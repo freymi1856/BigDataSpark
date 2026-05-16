@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bds_postgres
+    environment:
+      POSTGRES_DB: labdb
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: lab
+    ports:
+      - "15432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lab -d labdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.12-alpine
+    container_name: bds_clickhouse
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: lab
+      CLICKHOUSE_PASSWORD: lab
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "18123:8123"
+      - "19000:9000"
+    volumes:
+      - ch_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user lab --password lab --query 'SELECT 1'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  spark:
+    build:
+      context: ./spark
+    container_name: bds_spark
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    environment:
+      POSTGRES_JDBC_URL: jdbc:postgresql://postgres:5432/labdb
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: lab
+      CLICKHOUSE_JDBC_URL: jdbc:clickhouse://clickhouse:8123/analytics
+      CLICKHOUSE_USER: lab
+      CLICKHOUSE_PASSWORD: lab
+      CSV_INPUT_PATH: /data/MOCK_DATA*.csv
+    volumes:
+      - ./spark:/opt/spark-apps:ro
+      - ./исходные данные:/data:ro
+    working_dir: /opt/spark-apps
+    command: sleep infinity
+
+volumes:
+  pg_data:
+  ch_data:
